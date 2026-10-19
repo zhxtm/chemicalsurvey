@@ -13,55 +13,48 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout source (includes pre-generated android/)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK components
+      - name: Install Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
         env:
           ANDROID_HOME: ${{ runner.os == 'Linux' && '/usr/local/lib/android/sdk' || 'C:/Android/Sdk' }}
 
-      - name: Install npm dependencies (includes @capacitor/*)
-        run: npm ci
-
-      - name: Build Vite static site
-        run: npm run build
-
-      # android/ platform 已在本地生成并 commit
-      # 这里只需要把最新 dist/ 复制到 android assets
-      - name: Copy web assets to Android project
+      - name: npm ci + build
         run: |
-          npx cap copy android
-          echo "--- android assets after copy ---"
-          ls -la android/app/src/main/assets/public/ || echo "no public dir"
+          npm ci
+          npm run build
 
-      - name: Build debug APK with pre-built Gradle wrapper
+      - name: Copy web assets (skip capacitor CLI)
+        run: |
+          rm -rf android/app/src/main/assets/public/*
+          cp -r dist/* android/app/src/main/assets/public/
+          ls android/app/src/main/assets/public/
+
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
+          ./gradlew assembleDebug --no-daemon 2>&1
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: chemical-survey-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
