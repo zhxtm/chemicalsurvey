@@ -1,0 +1,85 @@
+name: Build APK 化学智勘·外业采集
+
+# 触发条件：push 到 main/master，或手动点 Run workflow
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+# 并发控制：同一个分支上只跑一个
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest  # Linux runner，比 Windows 快
+    timeout-minutes: 20
+
+    steps:
+      # ===== 1. 检出代码 =====
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ===== 2. 安装 Node.js =====
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ===== 3. 安装 Android SDK =====
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: '34.0.0'
+          cmdline-tools: latest
+          ndk-version: null
+          auto-accept: true
+
+      - name: Accept Android licenses
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      # ===== 4. 构建前端 =====
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Vite static site
+        run: npm run build
+
+      # ===== 5. 安装 Capacitor =====
+      - name: Install Capacitor
+        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Add Android platform
+        run: npx cap add android 2>&1 || echo "android platform already exists"
+
+      - name: Sync web assets to Android
+        run: npx cap sync android
+
+      # ===== 6. Gradle 构建 APK =====
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # ===== 7. 上传 APK 作为构建产物 =====
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chemical-survey-apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        if: false  # 以后加签名再开
+        with:
+          name: chemical-survey-apk-release
+          path: android/app/build/outputs/apk/release/app-release.apk
