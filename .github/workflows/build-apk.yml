@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - name: Checkout source
+      - name: Checkout source (includes android/ platform)
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -46,14 +46,11 @@ jobs:
       - name: Build Vite static site
         run: npm run build
 
-      - name: Install Capacitor
-        run: npm install @capacitor/core @capacitor/cli @capacitor/android
-
-      - name: Add Android platform
-        run: npx cap add android 2>&1 || echo "android platform already exists"
-
+      # android/ 已在本地 cap add android 生成好并 commit 上去了
+      # 这里只需要 cap sync 把最新 dist 同步进去
       - name: Sync web assets to Android
-        run: npx cap sync android
+        run: |
+          npx cap sync android
 
       - name: Build debug APK
         run: |

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">化学智勘外业采集</string>
+    <string name="title_activity_main">化学智勘外业采集</string>
+    <string name="package_name">com.chemical.survey</string>
+    <string name="custom_url_scheme">com.chemical.survey</string>
+</resources>

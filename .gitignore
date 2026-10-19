@@ -8,10 +8,11 @@ dist
 dist-ssr
 *.local
 
-# android / capacitor
-android/
+# android / capacitor (keep android/ platform in repo for GitHub Actions CI)
+# android/
 ios/
 capacitor.config.local.json
+!android/
 
 # editor
 .vscode

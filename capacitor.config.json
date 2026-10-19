@@ -1,6 +1,6 @@
 {
   "appId": "com.chemical.survey",
-  "appName": "化学智勘·外业采集",
+  "appName": "化学智勘外业采集",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"
