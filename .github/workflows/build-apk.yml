@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - name: Checkout source (includes android/ platform)
+      - name: Checkout source (includes pre-generated android/)
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -40,23 +40,25 @@ jobs:
         env:
           ANDROID_HOME: ${{ runner.os == 'Linux' && '/usr/local/lib/android/sdk' || 'C:/Android/Sdk' }}
 
-      - name: Install npm dependencies
+      - name: Install npm dependencies (includes @capacitor/*)
         run: npm ci
 
       - name: Build Vite static site
         run: npm run build
 
-      # android/ 已在本地 cap add android 生成好并 commit 上去了
-      # 这里只需要 cap sync 把最新 dist 同步进去
-      - name: Sync web assets to Android
+      # android/ platform 已在本地生成并 commit
+      # 这里只需要把最新 dist/ 复制到 android assets
+      - name: Copy web assets to Android project
         run: |
-          npx cap sync android
+          npx cap copy android
+          echo "--- android assets after copy ---"
+          ls -la android/app/src/main/assets/public/ || echo "no public dir"
 
-      - name: Build debug APK
+      - name: Build debug APK with pre-built Gradle wrapper
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
