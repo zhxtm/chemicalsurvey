@@ -311,6 +311,30 @@ export default function App() {
       const devCode = 'HXZK-' + `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}` + '-DEV00001'
       try { setLicense(devCode) } catch {}
     }
+    // 暴露调试入口：Console 里可以用 hxzk.clearDB() / hxzk.status()
+    window.hxzk = {
+      clearDB: () => { if (confirm('确定清空所有数据？')) { clearAll().then(() => location.reload()) } },
+      status: async () => {
+        const db = await new Promise((res, rej) => {
+          const req = indexedDB.open('survey_app_db', 2)
+          req.onsuccess = () => res(req.result)
+          req.onerror = () => rej(req.error)
+        })
+        const summary = {}
+        for (const name of db.objectStoreNames) {
+          summary[name] = await new Promise(r => {
+            const tx = db.transaction(name, 'readonly')
+            tx.objectStore(name).count().onsuccess = e => r(e.target.result)
+          })
+        }
+        console.table(summary)
+        return summary
+      },
+      deleteDB: () => {
+        indexedDB.deleteDatabase('survey_app_db')
+        console.log('survey_app_db 已标记删除，刷新页面后生效')
+      }
+    }
     setLicenseChecked(true)
   }, [])
 
