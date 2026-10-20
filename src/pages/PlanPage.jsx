@@ -145,19 +145,33 @@ export default function PlanPage({ projectId, onBack }) {
     img.src = url
   }
 
-  // ====== 拖拽平移 ======
+  // ====== 拖拽平移（rAF 节流，避免每帧多次 setState）======
+  const rafRef = useRef(null)
+  const pendingOffset = useRef(null)
   function onMouseDown(e) {
     setDragging(true)
     dragStart.current = { x: e.clientX, y: e.clientY, off: { ...offset } }
   }
   function onMouseMove(e) {
     if (!dragging || !dragStart.current) return
-    setOffset({
+    pendingOffset.current = {
       x: dragStart.current.off.x + (e.clientX - dragStart.current.x),
       y: dragStart.current.off.y + (e.clientY - dragStart.current.y),
-    })
+    }
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null
+        if (pendingOffset.current) {
+          setOffset(pendingOffset.current)
+          pendingOffset.current = null
+        }
+      })
+    }
   }
-  function onMouseUp() { setDragging(false); dragStart.current = null }
+  function onMouseUp() {
+    setDragging(false); dragStart.current = null
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+  }
   function onWheel(e) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
@@ -202,29 +216,33 @@ export default function PlanPage({ projectId, onBack }) {
             {/* 背景 + 边框 */}
             <rect x="0" y="0" width={W} height={H} fill="#fafafa" stroke="#cbd5e1" strokeWidth="2" />
 
-            {/* 网格 */}
-            {transform && (
-              <>
-                {(() => {
-                  const xs = []
-                  const ys = []
-                  for (let gx = transform.minX; gx <= transform.minX + (W - 2*PAD) / transform.s; gx += 50 / 111320) {
-                    const [x] = toXY(gx, transform.minY)
-                    xs.push(x)
-                  }
-                  for (let gy = transform.minY; gy <= transform.minY + (H - 2*PAD) / transform.s; gy += 50 / 111320) {
-                    const [, y] = toXY(transform.minX, gy)
-                    ys.push(y)
-                  }
-                  return (
-                    <g>
-                      {xs.map((x, i) => <line key={`gx${i}`} x1={x} y1={PAD} x2={x} y2={H-PAD} stroke="#e2e8f0" strokeDasharray="2 4" />)}
-                      {ys.map((y, i) => <line key={`gy${i}`} x1={PAD} y1={y} x2={W-PAD} y2={y} stroke="#e2e8f0" strokeDasharray="2 4" />)}
-                    </g>
-                  )
-                })()}
-              </>
-            )}
+            {/* 网格：最多 ~40 条线，按实际量纲自适应步长 */}
+            {transform && (() => {
+              // 自适应步长：让网格线间距在 20~60 px 之间
+              const xPxRange = (W - 2 * PAD)
+              const yPxRange = (H - 2 * PAD)
+              const xStep = Math.max(20, Math.min(60, xPxRange / 40))   // px
+              const yStep = Math.max(20, Math.min(60, yPxRange / 30))   // px
+              // 换算回"原始坐标单位"（可能是米或度）
+              const xStepRaw = xStep / (transform.mPerUnit * transform.s)
+              const yStepRaw = yStep / (transform.mPerUnit * transform.s)
+              // 对齐到步长
+              const x0 = Math.ceil(transform.minX / xStepRaw) * xStepRaw
+              const y0 = Math.ceil(transform.minY / yStepRaw) * yStepRaw
+              const xs = []; const ys = []
+              for (let gx = x0; gx <= transform.minX + xPxRange / (transform.mPerUnit * transform.s); gx += xStepRaw) {
+                const [x] = toXY(gx, transform.minY); xs.push(x)
+              }
+              for (let gy = y0; gy <= transform.minY + yPxRange / (transform.mPerUnit * transform.s); gy += yStepRaw) {
+                const [, y] = toXY(transform.minX, gy); ys.push(y)
+              }
+              return (
+                <g>
+                  {xs.map((x, i) => <line key={`gx${i}`} x1={x} y1={PAD} x2={x} y2={H-PAD} stroke="#e2e8f0" strokeDasharray="2 4" />)}
+                  {ys.map((y, i) => <line key={`gy${i}`} x1={PAD} y1={y} x2={W-PAD} y2={y} stroke="#e2e8f0" strokeDasharray="2 4" />)}
+                </g>
+              )
+            })()}
 
             {/* 剖线 */}
             {lines.map(line => {
