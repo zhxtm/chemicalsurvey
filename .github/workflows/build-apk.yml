@@ -32,8 +32,14 @@ jobs:
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMGR" || { echo "sdkmanager not found at $SDKMGR"; ls "$ANDROID_HOME"; exit 1; }
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          # compileSdk/targetSdk 都是 36（见 android/variables.gradle），必须装 android-36
+          "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          echo "--- installed platforms ---"
+          ls "$ANDROID_HOME/platforms"
+          ls "$ANDROID_HOME/build-tools"
         env:
           ANDROID_HOME: ${{ runner.os == 'Linux' && '/usr/local/lib/android/sdk' || 'C:/Android/Sdk' }}
 
@@ -50,11 +56,18 @@ jobs:
           echo "--- copied assets ---"
           ls android/app/src/main/assets/public/
 
+      # gradle-wrapper 默认指向腾讯云镜像（本地开发快），CI 跑在美国 runner
+      # 上可能超时/连不上，这里改成官方源
+      - name: Use official Gradle distribution in CI
+        run: |
+          sed -i 's|mirrors.cloud.tencent.com/gradle|services.gradle.org/distributions|' android/gradle/wrapper/gradle-wrapper.properties
+          grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
+
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon 2>&1
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
 
       - uses: actions/upload-artifact@v4
         with:
