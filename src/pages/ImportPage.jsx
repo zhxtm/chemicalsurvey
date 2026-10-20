@@ -5,7 +5,7 @@ import { parseLizhengTXT, parseCPTRawText, validateLizhengText } from '../import
 import { parseHuNingFJ, isHuNingFJFileList, decodeGBK, listAllStems } from '../importHuNingFJ.js'
 import { createProject, createBorehole, createRecord, upsertCPTPoints, upsertLayers, genId } from '../db.js'
 
-export default function ImportPage({ projects, onRefresh }) {
+export default function ImportPage({ projects, onRefresh, onBack }) {
   const [mode, setMode] = useState(null)         // 'lizheng' | 'cpt'
   const [parsed, setParsed] = useState(null)
   const [targetProject, setTargetProject] = useState('new')  // 'new' | projectId
@@ -338,7 +338,14 @@ export default function ImportPage({ projects, onRefresh }) {
   // ============== 渲染 ==============
   return (
     <div>
-      <h2 className="text-xl font-bold text-slate-800 mb-4">📥 数据导入</h2>
+      <div className="flex items-center gap-3 mb-4">
+        {onBack && (
+          <button onClick={onBack} className="text-green-600 hover:text-green-800 font-medium text-sm">
+            ← 返回
+          </button>
+        )}
+        <h2 className="text-xl font-bold text-slate-800">📥 数据导入</h2>
+      </div>
 
       {/* 文件选择 */}
       <div className="card mb-4">

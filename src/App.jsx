@@ -428,7 +428,7 @@ export default function App() {
           <OfficeHome projects={projects} navigate={navigate} onShowFeedback={() => setShowFeedback(true)} onRefresh={loadProjects} />
         )}
         {mode === 'office' && page === 'import' && (
-          <ImportPage projects={projects} onRefresh={loadProjects} />
+          <ImportPage projects={projects} onRefresh={loadProjects} onBack={() => navigate('/office')} />
         )}
         {mode === 'office' && page === 'plan' && params[0] && (
           <PlanPage projectId={params[0]} onBack={() => navigate(`/office`)} />
