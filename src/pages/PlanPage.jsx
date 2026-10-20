@@ -17,13 +17,20 @@ export default function PlanPage({ projectId, onBack }) {
   const dragStart = useRef(null)
   const svgRef = useRef(null)
 
+  // 兜底：旧版导入数据可能只有 coordX/coordY 没有 lng/lat
+  const getLng = (b) => b.lng ?? b.coordX
+  const getLat = (b) => b.lat ?? b.coordY
+
   useEffect(() => { load() }, [projectId])
 
   async function load() {
     const bs = await listBoreholes(projectId)
     const ls = await listSectionLines(projectId)
-    // 过滤掉无坐标的钻孔（默认给 0,0 但提醒用户）
-    const validBs = bs.filter(b => b.lng != null && b.lat != null && b.lng !== 0 && b.lat !== 0)
+    // 过滤掉无坐标的钻孔
+    const validBs = bs.filter(b => {
+      const lng = getLng(b), lat = getLat(b)
+      return lng != null && lat != null && lng !== 0 && lat !== 0
+    })
     setBoreholes(validBs)
     setLines(ls)
   }
@@ -34,8 +41,8 @@ export default function PlanPage({ projectId, onBack }) {
   //   若 X 范围 < 1   → 经纬度，需换算成米
   const transform = useMemo(() => {
     if (boreholes.length === 0) return null
-    const xs = boreholes.map(b => b.lng)
-    const ys = boreholes.map(b => b.lat)
+    const xs = boreholes.map(b => getLng(b))
+    const ys = boreholes.map(b => getLat(b))
     let minX = Math.min(...xs), maxX = Math.max(...xs)
     let minY = Math.min(...ys), maxY = Math.max(...ys)
     if (maxX - minX < 0.001) { maxX = minX + 0.01 }
@@ -86,7 +93,7 @@ export default function PlanPage({ projectId, onBack }) {
     return (line.boreholeNos || [])
       .map(no => boreholes.find(b => b.boreholeNo === no))
       .filter(Boolean)
-      .map(b => ({ borehole: b, xy: toXY(b.lng, b.lat) }))
+      .map(b => ({ borehole: b, xy: toXY(getLng(b), getLat(b)) }))
   }
 
   // ====== 新增剖线 ======
@@ -239,7 +246,7 @@ export default function PlanPage({ projectId, onBack }) {
 
             {/* 钻孔点位 */}
             {boreholes.map(b => {
-              const [x, y] = toXY(b.lng, b.lat)
+              const [x, y] = toXY(getLng(b), getLat(b))
               return (
                 <g key={b.id}>
                   <circle cx={x} cy={y} r="8" fill="white" stroke="#059669" strokeWidth="2" />

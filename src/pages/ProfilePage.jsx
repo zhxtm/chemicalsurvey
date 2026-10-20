@@ -66,6 +66,10 @@ export default function ProfilePage({ projectId, onBack }) {
     return () => { cancelled = true }
   }, [lineBoreholes])
 
+  // 兜底：旧版导入数据可能只有 coordX/coordY 没有 lng/lat
+  const getLng = (b) => b.lng ?? b.coordX ?? 0
+  const getLat = (b) => b.lat ?? b.coordY ?? 0
+
   // 孔间距计算
   const spacings = useMemo(() => {
     if (!selectedLine || lineBoreholes.length < 2) return []
@@ -73,8 +77,8 @@ export default function ProfilePage({ projectId, onBack }) {
       return selectedLine.spacings.slice(0, lineBoreholes.length - 1).map(Number)
     }
     // 自动检测坐标量纲：看坐标**绝对值**，经纬度 |lng|≤180/|lat|≤90，工程坐标（米）通常 > 1000
-    const allX = lineBoreholes.map(b => b.lng || 0)
-    const allY = lineBoreholes.map(b => b.lat || 0)
+    const allX = lineBoreholes.map(b => getLng(b))
+    const allY = lineBoreholes.map(b => getLat(b))
     const maxAbsCoord = Math.max(...allX.map(Math.abs), ...allY.map(Math.abs))
     const isProjectCoord = maxAbsCoord > 500   // 经纬度绝对不会超过 180，过 500 就是米级工程坐标
     // 按 X/Y 坐标自动计算（勾股距离）
@@ -82,13 +86,13 @@ export default function ProfilePage({ projectId, onBack }) {
     for (let i = 1; i < lineBoreholes.length; i++) {
       const a = lineBoreholes[i - 1]
       const b = lineBoreholes[i]
-      const dx = (b.lng || 0) - (a.lng || 0)
-      const dy = (b.lat || 0) - (a.lat || 0)
+      const dx = getLng(b) - getLng(a)
+      const dy = getLat(b) - getLat(a)
       let dxM, dyM
       if (isProjectCoord) {
         dxM = dx; dyM = dy
       } else {
-        const latMid = ((a.lat || 0) + (b.lat || 0)) / 2 * Math.PI / 180
+        const latMid = (getLat(a) + getLat(b)) / 2 * Math.PI / 180
         const mPerDegX = 111320 * Math.cos(latMid)
         dxM = dx * mPerDegX
         dyM = dy * 111320
