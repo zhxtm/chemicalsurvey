@@ -25,7 +25,10 @@ jobs:
 
       - uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          # Capacitor 7 的 capacitor-android 模块要求 sourceCompatibility 21
+          # （见 node_modules/@capacitor/android/capacitor/build.gradle:66）
+          # 用 17 会报 "invalid source release: 21"
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Install Android SDK
