@@ -13,6 +13,8 @@ export default function BoreholeList({ projectId, onBack, onRefresh, onOpen }) {
   const [importLoading, setImportLoading] = useState(false)
   const fileInputRef = useRef(null)
 
+  function go(hash) { window.location.hash = hash }
+
   useEffect(() => { load() }, [projectId])
 
   async function load() {
@@ -105,6 +107,10 @@ export default function BoreholeList({ projectId, onBack, onRefresh, onOpen }) {
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-slate-800">🕳️ 钻孔管理</h2>
         <div className="flex gap-2">
+          <button onClick={() => go(`#/plan/${projectId}`)}
+                  className="bg-sky-600 hover:bg-sky-700 text-white text-sm px-3 py-1.5 rounded-md font-semibold shadow-sm">🗺️ 平面图</button>
+          <button onClick={() => go(`#/profiles/${projectId}`)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1.5 rounded-md font-semibold shadow-sm">📐 剖面图</button>
           <button onClick={() => fileInputRef.current.click()}
                   className="btn-secondary">📥 导入钻孔表</button>
           <button onClick={() => { setShowForm(v => !v); if (!showForm) suggestNext() }} className="btn-primary">

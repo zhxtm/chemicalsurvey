@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   getBorehole, listRecords, createRecord, updateRecord, deleteRecord,
-  listPhotosByRecord, addPhoto, deletePhoto, updateBorehole
+  listPhotosByRecord, addPhoto, deletePhoto, updateBorehole,
+  listLayers, upsertLayers, listCPTByBorehole
 } from '../db.js'
 import { BOREHOLE_TYPES, MOISTURES, SECTION_GLOSS, SHAKE_REACTION, generateDescription, fmtDepth } from '../dataDict.js'
 import { SOIL_NAME_LIST, STATES, COLORS } from '../dataDict.js'
 import BoreholeProfile from './BoreholeProfile.jsx'
+import { stratifyFromRecords, stratifyFromCPT, soilColor } from '../stratify.js'
 
 export default function BoreholeDetail({ boreholeId, onBack }) {
   const [borehole, setBorehole] = useState(null)
@@ -15,12 +17,95 @@ export default function BoreholeDetail({ boreholeId, onBack }) {
   const [showProfile, setShowProfile] = useState(false)
   const fileInputRef = useRef(null)
 
+  // ==== v2 内业扩展：地层 tab + CPT ====
+  const [activeTab, setActiveTab] = useState('records')    // 'records' | 'layers'
+  const [layers, setLayers] = useState([])                  // 已保存的地层
+  const [cptPoints, setCptPoints] = useState([])
+  const [cptLayers, setCptLayers] = useState([])            // CPT 自动分层结果（只读参考）
+  const [layersDirty, setLayersDirty] = useState(false)
+
   useEffect(() => { load() }, [boreholeId])
 
   async function load() {
     const b = await getBorehole(boreholeId)
     const rs = await listRecords(boreholeId)
-    setBorehole(b); setRecords(rs)
+    const ly = await listLayers(boreholeId)
+    const cpt = await listCPTByBorehole(boreholeId)
+    const cptL = cpt.length >= 3 ? stratifyFromCPT(cpt) : []
+    setBorehole(b); setRecords(rs); setLayers(ly); setCptPoints(cpt); setCptLayers(cptL); setLayersDirty(false)
+  }
+
+  // ==== 自动分层：回次 → 地层 ====
+  function doAutoStratify() {
+    if (records.length === 0) { alert('没有回次数据，无法自动分层'); return }
+    const result = stratifyFromRecords(records)
+    if (result.length === 0) { alert('自动分层结果为空'); return }
+    setLayers(result.map(l => ({ ...l })))
+    setLayersDirty(true)
+  }
+
+  function doSaveLayers() {
+    if (!confirm(`保存 ${layers.length} 层地层到钻孔 ${borehole.boreholeNo}？`)) return
+    upsertLayers(boreholeId, layers.map(l => ({
+      topDepth: l.topDepth, bottomDepth: l.bottomDepth,
+      soilName: l.soilName, state: l.state, moisture: l.moisture, color: l.color,
+      subLayerNo: l.subLayerNo || '', genDesc: l.genDesc || '',
+      description: l.description || ''
+    }))).then(() => load())
+  }
+
+  function doResetLayers() {
+    if (!confirm('恢复为已保存的地层？未保存的修改将丢失')) return
+    load()
+  }
+
+  function moveLayer(idx, dir) {
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= layers.length) return
+    const arr = [...layers]
+    // 交换位置 + 重新对齐深度
+    const [a, b] = [arr[idx], arr[newIdx]]
+    arr[idx] = b; arr[newIdx] = a
+    realignDepths(arr)
+    setLayers(arr); setLayersDirty(true)
+  }
+
+  function deleteLayer(idx) {
+    if (!confirm('删除该层？')) return
+    const arr = layers.filter((_, i) => i !== idx)
+    realignDepths(arr)
+    setLayers(arr); setLayersDirty(true)
+  }
+
+  function addLayerAfter(idx) {
+    const arr = [...layers]
+    const prev = arr[idx]
+    const top = prev ? prev.bottomDepth : 0
+    const bot = prev ? top + (prev.bottomDepth - prev.topDepth || 1.5) : 1.5
+    arr.splice(idx + 1, 0, {
+      topDepth: top, bottomDepth: bot, thickness: bot - top,
+      soilName: '', state: '', moisture: '稍湿', color: '灰', description: ''
+    })
+    realignDepths(arr)
+    setLayers(arr); setLayersDirty(true)
+  }
+
+  function updateLayerField(idx, key, val) {
+    const arr = [...layers]
+    arr[idx] = { ...arr[idx], [key]: val }
+    if (key === 'bottomDepth' || key === 'topDepth') {
+      arr[idx].thickness = Math.max(0, arr[idx].bottomDepth - arr[idx].topDepth)
+      realignDepths(arr)
+    }
+    setLayers(arr); setLayersDirty(true)
+  }
+
+  // 让相邻层的顶深 = 上一层底深，保证连续不重叠
+  function realignDepths(arr) {
+    for (let i = 1; i < arr.length; i++) {
+      arr[i].topDepth = arr[i - 1].bottomDepth
+    }
+    for (const l of arr) l.thickness = Math.max(0, l.bottomDepth - l.topDepth)
   }
 
   // ============ 新建回次 ============
@@ -230,6 +315,24 @@ export default function BoreholeDetail({ boreholeId, onBack }) {
         onAddRound={startNewRound}
         onShowProfile={() => setShowProfile(true)}
       />
+
+      {/* Tab 切换条 */}
+      <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-lg">
+        <button onClick={() => setActiveTab('records')}
+                className={`flex-1 py-2 rounded-md text-sm font-semibold transition ${activeTab === 'records' ? 'bg-white shadow text-green-700' : 'text-slate-500'}`}>
+          📋 回次 (外业)
+        </button>
+        <button onClick={() => setActiveTab('layers')}
+                className={`flex-1 py-2 rounded-md text-sm font-semibold transition ${activeTab === 'layers' ? 'bg-white shadow text-green-700' : 'text-slate-500'}`}>
+          🧱 地层 (内业)
+          {layersDirty && <span className="ml-1 text-amber-600">●</span>}
+          {layers.length > 0 && !layersDirty && <span className="ml-1 text-xs text-slate-400">{layers.length}层</span>}
+        </button>
+      </div>
+
+      {/* ========== 回次视图（原内容） ========== */}
+      {activeTab === 'records' && (
+        <>
 
       {/* 回次列表 */}
       <div className="mb-5">
@@ -549,12 +652,164 @@ export default function BoreholeDetail({ boreholeId, onBack }) {
         <BoreholeProfile
           borehole={borehole}
           records={records}
+          layers={layers.length > 0 ? layers : stratifyFromRecords(records)}
           onClose={() => setShowProfile(false)}
         />
       )}
       {showProfile && records.length === 0 && (
         alert('请先录入至少 1 个回次，才能生成柱状图！') || setShowProfile(false)
       )}
+
+        </>
+      )}
+
+      {/* ========== 地层视图（内业） ========== */}
+      {activeTab === 'layers' && (
+        <div className="space-y-4">
+          {/* 操作栏 */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex flex-wrap gap-3 items-center">
+              <h3 className="font-bold text-slate-700 flex-1">🧱 地层分层（内业精细化）</h3>
+              <button onClick={doAutoStratify}
+                      className="btn-primary text-sm"
+                      title="按外业回次的岩土名+状态+湿度变化自动合并生成地层">
+                🤖 自动分层（基于外业回次）
+              </button>
+              {layersDirty && (
+                <>
+                  <button onClick={doSaveLayers} className="btn-primary text-sm">💾 保存地层</button>
+                  <button onClick={doResetLayers} className="btn-secondary text-sm">↩️ 取消修改</button>
+                </>
+              )}
+            </div>
+            <div className="text-xs text-slate-500 mt-2">
+              💡 自动分层规则：连续回次的「岩土名称 + 状态 + 湿度 + 颜色」四个字段全部相同则合并为一层。相邻层深度自动对齐（上层底 = 下层顶）。
+            </div>
+          </div>
+
+          {/* CPT 数据参考（如果有） */}
+          {cptPoints.length > 0 && (
+            <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
+              <h4 className="font-bold text-blue-800 mb-3 flex items-center gap-2">
+                🎯 静力触探 (CPT) 自动分层参考
+                <span className="text-xs font-normal text-blue-600">（仅供参考，不自动合并到地层表）</span>
+              </h4>
+              <div className="text-xs text-blue-700 mb-2">
+                {cptPoints.length} 个 CPT 数据点 · 梯度阈值 25% · 识别出 {cptLayers.length} 层
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-blue-700 border-b border-blue-300">
+                    <tr>
+                      <th className="py-1 text-left">层号</th>
+                      <th className="py-1 text-left">顶深(m)</th>
+                      <th className="py-1 text-left">底深(m)</th>
+                      <th className="py-1 text-right">层厚(m)</th>
+                      <th className="py-1 text-right">qc均值(MPa)</th>
+                      <th className="py-1 text-right">fs均值(kPa)</th>
+                      <th className="py-1 text-right">Ps均值(MPa)</th>
+                      <th className="py-1 text-left">推断土性</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-blue-900">
+                    {cptLayers.map((l, i) => (
+                      <tr key={i} className="border-t border-blue-100">
+                        <td className="py-1">{i+1}</td>
+                        <td>{l.topDepth.toFixed(2)}</td>
+                        <td>{l.bottomDepth.toFixed(2)}</td>
+                        <td className="text-right">{l.thickness.toFixed(2)}</td>
+                        <td className="text-right">{l.qcMean}</td>
+                        <td className="text-right">{l.fsMean}</td>
+                        <td className="text-right font-semibold">{l.psMean}</td>
+                        <td className="text-emerald-700 font-semibold">{l.soilGuess}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 地层表 */}
+          {layers.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 bg-white rounded-xl border border-dashed border-slate-300">
+              {records.length > 0 ? (
+                <>
+                  <div className="text-4xl mb-3">🧱</div>
+                  <p className="mb-3">还没有分层，点击上方「🤖 自动分层」基于外业 {records.length} 个回次生成地层</p>
+                </>
+              ) : (
+                <p>请先录入外业回次数据，才能生成地层</p>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              {/* 表头 */}
+              <div className="grid gap-1 px-3 py-2 bg-slate-100 text-xs font-bold text-slate-600 border-b border-slate-200"
+                   style={{ gridTemplateColumns: '36px 60px 1fr 70px 50px 50px 50px 100px 60px 60px 60px' }}>
+                <div className="text-center">#</div>
+                <div>顶深(m)</div>
+                <div>岩土名称</div>
+                <div>底深(m)</div>
+                <div>层厚</div>
+                <div>状态</div>
+                <div>湿度</div>
+                <div>描述</div>
+                <div></div>
+                <div></div>
+                <div></div>
+              </div>
+
+              {/* 行 */}
+              {layers.map((l, i) => (
+                <div key={i} className={`grid gap-1 px-3 py-2 text-sm items-center border-b border-slate-100 ${layersDirty ? 'bg-amber-50/30' : ''}`}
+                     style={{ gridTemplateColumns: '36px 60px 1fr 70px 50px 50px 50px 100px 60px 60px 60px' }}>
+                  <div className="text-center">
+                    <span className="inline-block w-6 h-6 rounded text-xs font-bold text-white text-center leading-6"
+                          style={{ background: soilColor(l.soilName) }}>{i+1}</span>
+                  </div>
+                  <input type="number" step="0.01" value={l.topDepth ?? ''}
+                         onChange={e => updateLayerField(i, 'topDepth', parseFloat(e.target.value) || 0)}
+                         className="w-full border border-slate-200 rounded px-1 py-0.5 text-xs" />
+                  <input value={l.soilName}
+                         onChange={e => updateLayerField(i, 'soilName', e.target.value)}
+                         className="w-full border border-slate-200 rounded px-1 py-0.5 text-xs" />
+                  <input type="number" step="0.01" value={l.bottomDepth ?? ''}
+                         onChange={e => updateLayerField(i, 'bottomDepth', parseFloat(e.target.value) || 0)}
+                         className="w-full border border-slate-200 rounded px-1 py-0.5 text-xs" />
+                  <div className="text-center text-slate-600">{l.thickness?.toFixed(2) || '—'}</div>
+                  <input value={l.state}
+                         onChange={e => updateLayerField(i, 'state', e.target.value)}
+                         className="w-full border border-slate-200 rounded px-1 py-0.5 text-xs" />
+                  <input value={l.moisture}
+                         onChange={e => updateLayerField(i, 'moisture', e.target.value)}
+                         className="w-full border border-slate-200 rounded px-1 py-0.5 text-xs" />
+                  <input value={l.description}
+                         onChange={e => updateLayerField(i, 'description', e.target.value)}
+                         className="w-full border border-slate-200 rounded px-1 py-0.5 text-xs" />
+                  <div className="flex gap-1 justify-center">
+                    <button onClick={() => moveLayer(i, -1)} disabled={i === 0}
+                            className="text-slate-400 hover:text-green-600 disabled:opacity-30 text-xs">↑</button>
+                    <button onClick={() => moveLayer(i, +1)} disabled={i === layers.length - 1}
+                            className="text-slate-400 hover:text-green-600 disabled:opacity-30 text-xs">↓</button>
+                  </div>
+                  <button onClick={() => addLayerAfter(i)}
+                          className="text-blue-500 hover:text-blue-700 text-xs">＋</button>
+                  <button onClick={() => deleteLayer(i)}
+                          className="text-red-500 hover:text-red-700 text-xs">✕</button>
+                </div>
+              ))}
+
+              {/* 层厚汇总 */}
+              <div className="px-3 py-2 bg-slate-50 text-xs text-slate-500 border-t border-slate-200">
+                共 {layers.length} 层 · 累计厚度 {layers.reduce((s, l) => s + (l.thickness || 0), 0).toFixed(2)} m
+                {borehole.designDepth && <> · 设计孔深 {borehole.designDepth} m</>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   )
 }

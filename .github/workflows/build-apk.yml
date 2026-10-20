@@ -42,10 +42,12 @@ jobs:
           npm ci
           npm run build
 
+      # android/ 平台已预先 commit，手动复制 web 资源过去
       - name: Copy web assets (skip capacitor CLI)
         run: |
           rm -rf android/app/src/main/assets/public/*
           cp -r dist/* android/app/src/main/assets/public/
+          echo "--- copied assets ---"
           ls android/app/src/main/assets/public/
 
       - name: Build APK

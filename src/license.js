@@ -117,11 +117,12 @@ export function verifyCode(inputCode) {
   const expectedCheck = md5(expireDate + CONFIG.SALT).slice(0, 8).toUpperCase()
   if (checksum !== expectedCheck) return { ok: false, reason: '激活码无效' }
   // 验证日期是否过期
-  const exp = new Date(expireDate.slice(0,4) + '-' + expireDate.slice(4,6) + '-' + expireDate.slice(6,8))
+  const iso = `${expireDate.slice(0,4)}-${expireDate.slice(4,6)}-${expireDate.slice(6,8)}`
+  const exp = new Date(iso)
   const now = new Date()
   now.setHours(0,0,0,0); exp.setHours(0,0,0,0)
   if (now > exp) return { ok: false, reason: '激活码已过期' }
-  return { ok: true, expireDate }
+  return { ok: true, expireDate: iso }
 }
 
 // ============= 生成激活码（你发给记录员之前用这个生成） =============
@@ -144,11 +145,17 @@ export function getLicense() {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const data = JSON.parse(raw)
+    // 兼容早期版本写入的 8 位到期日（20261118 → 2026-11-18）
+    const expireDate = /^\d{8}$/.test(data.expireDate)
+      ? `${data.expireDate.slice(0,4)}-${data.expireDate.slice(4,6)}-${data.expireDate.slice(6,8)}`
+      : data.expireDate
     // 过期检测
-    const exp = new Date(data.expireDate)
+    const exp = new Date(expireDate)
     const now = new Date(); now.setHours(0,0,0,0); exp.setHours(0,0,0,0)
-    if (now > exp) return { ...data, expired: true }
-    return { ...data, expired: false }
+    // 到期日无法解析时按已过期处理，避免试用期永不失效
+    if (isNaN(exp.getTime())) return { ...data, expireDate, expired: true }
+    if (now > exp) return { ...data, expireDate, expired: true }
+    return { ...data, expireDate, expired: false }
   } catch { return null }
 }
 
